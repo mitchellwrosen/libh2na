@@ -131,4 +131,4 @@ initializeChaCha (SecretKey key) nonce =
 -- signatures.
 sign :: SecretKey -> ByteString -> Signature
 sign (SecretKey key) message =
-  ByteArray.convert (HMAC.hmac key message :: HMAC.HMAC Hash.Blake2sp_256)
+  ByteArray.convert (HMAC.hmac key message :: HMAC.HMAC Hash.Blake2b_256)

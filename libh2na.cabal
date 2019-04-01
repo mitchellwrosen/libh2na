@@ -8,6 +8,7 @@ library
     base,
     bytestring,
     cryptonite,
+    foldl,
     memory,
     pedersen-commitment,
     transformers
@@ -19,6 +20,7 @@ library
 
   exposed-modules:
     H2NA.Commitment
+    H2NA.Hash
     H2NA.SecretBox
 
   ghc-options:
