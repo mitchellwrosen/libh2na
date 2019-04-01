@@ -3,12 +3,15 @@
 module H2NA.SecretBox
   ( encrypt
   , decrypt
+  , sign
   , SecretKey
   , generateSecretKey
   , Nonce
   , generateNonce
+  , defaultNonce
   , Plaintext
   , Ciphertext
+  , Signature
   ) where
 
 import Control.Monad             (guard)
@@ -19,6 +22,8 @@ import Data.ByteString           (ByteString)
 import Data.Function             ((&))
 
 import qualified Crypto.Cipher.ChaChaPoly1305 as ChaCha
+import qualified Crypto.Hash.Algorithms       as Hash
+import qualified Crypto.MAC.HMAC              as HMAC
 import qualified Crypto.MAC.Poly1305          as Poly1305
 import qualified Crypto.Random                as Random
 import qualified Data.ByteArray               as ByteArray
@@ -31,9 +36,13 @@ type Plaintext
 type Ciphertext
   = ByteString
 
+type Signature
+  = ByteString
+
 newtype SecretKey
   = SecretKey Bytes
 
+-- | Generate a random secret key.
 generateSecretKey :: IO SecretKey
 generateSecretKey =
   SecretKey <$>
@@ -42,6 +51,7 @@ generateSecretKey =
 newtype Nonce
   = Nonce ChaCha.Nonce
 
+-- | Generate a random nonce.
 generateNonce :: IO Nonce
 generateNonce = do
   bytes :: Bytes <-
@@ -51,9 +61,20 @@ generateNonce = do
     CryptoPassed nonce ->
       pure (Nonce nonce)
 
+-- | The default nonce.
+defaultNonce :: Nonce
+defaultNonce =
+  case ChaCha.nonce12 (ByteString.replicate 12 0) of
+    CryptoPassed nonce ->
+      Nonce nonce
+
+-- | Encrypt and sign a message with a secret key and a nonce.
+--
+-- If the key is used more than once, then the nonce should be randomly
+-- generated with 'generateNonce'. Otherwise, you may use 'defaultNonce'.
 encrypt :: SecretKey -> Nonce -> Plaintext -> Ciphertext
 encrypt key (Nonce nonce) plaintext =
-  evalState (encryptS nonce plaintext) (initialize key nonce)
+  evalState (encryptS nonce plaintext) (initializeChaCha key nonce)
 
 encryptS :: ChaCha.Nonce -> Plaintext -> State ChaCha.State Ciphertext
 encryptS nonce plaintext = do
@@ -68,6 +89,8 @@ encryptS nonce plaintext = do
       , ciphertext
       ])
 
+-- | Decrypt and verify a message with the secret key that was used to encrypt
+-- and sign it.
 decrypt :: SecretKey -> Ciphertext -> Maybe Plaintext
 decrypt key payload0 = do
   let
@@ -86,7 +109,7 @@ decrypt key payload0 = do
 
   let
     (plaintext, chacha) =
-      initialize key nonce
+      initializeChaCha key nonce
         & ChaCha.appendAAD nonce
         & ChaCha.finalizeAAD
         & ChaCha.decrypt ciphertext
@@ -95,8 +118,17 @@ decrypt key payload0 = do
 
   pure plaintext
 
-initialize :: SecretKey -> ChaCha.Nonce -> ChaCha.State
-initialize (SecretKey key) nonce =
+initializeChaCha :: SecretKey -> ChaCha.Nonce -> ChaCha.State
+initializeChaCha (SecretKey key) nonce =
   case ChaCha.initialize key nonce of
     CryptoPassed chacha ->
       chacha
+
+-- | Sign a message with a secret key.
+--
+-- To verify that a message was signed by a particular secret key, given the
+-- message and a signature, simply re-sign the message and compare the
+-- signatures.
+sign :: SecretKey -> ByteString -> Signature
+sign (SecretKey key) message =
+  ByteArray.convert (HMAC.hmac key message :: HMAC.HMAC Hash.Blake2sp_256)
