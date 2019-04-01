@@ -6,13 +6,18 @@ version: 0
 library
   build-depends:
     base,
+    bytestring,
     cryptonite,
+    memory,
+
+  default-extensions:
+    ScopedTypeVariables
+
+  exposed-modules:
+    H2NA.SecretBox
 
   ghc-options:
     -Wall
-
-  exposed-modules:
-    H2NA.Secret
 
   hs-source-dirs:
     src
