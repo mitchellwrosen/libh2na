@@ -4,11 +4,9 @@ module H2NA.Commitment
   , committed
   ) where
 
-import Data.Bits       (shiftL, (.|.))
-import Data.ByteString (ByteString)
-import Data.Word       (Word8)
+import Crypto.Number.Serialize (os2ip)
+import Data.ByteString         (ByteString)
 
-import qualified Data.ByteString as ByteString
 import qualified Pedersen
 
 
@@ -26,7 +24,7 @@ commit value = do
     Pedersen.ecSetup Nothing
 
   Pedersen.ECPedersen commitment reveal_ <-
-    Pedersen.ecCommit (byteStringToInteger value) params
+    Pedersen.ecCommit (os2ip value) params
 
   pure (Commitment params commitment (Pedersen.ecRevealScalar reveal_))
 
@@ -37,13 +35,6 @@ committed (Commitment params commitment scalar) value =
     params
     commitment
     Pedersen.ECReveal
-      { Pedersen.ecRevealVal = byteStringToInteger value
+      { Pedersen.ecRevealVal = os2ip value
       , Pedersen.ecRevealScalar = scalar
       }
-
-byteStringToInteger :: ByteString -> Integer
-byteStringToInteger =
-  foldr step 0 . ByteString.unpack
-  where
-    step :: Word8 -> Integer -> Integer
-    step n acc = acc `shiftL` 8 .|. fromIntegral n
