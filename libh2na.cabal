@@ -11,16 +11,20 @@ library
     foldl,
     memory,
     pedersen-commitment,
+    text,
     transformers
 
   default-extensions:
+    LambdaCase
     ScopedTypeVariables
     StrictData
     TypeApplications
+    ViewPatterns
 
   exposed-modules:
     H2NA.Commitment
     H2NA.Hash
+    H2NA.Password
     H2NA.PublicKey
     H2NA.Salt
     H2NA.SecretBox
@@ -34,3 +38,24 @@ library
 
   other-modules:
     H2NA.Internal
+
+executable bench
+  build-depends:
+    base,
+    bytestring,
+    chronos-bench,
+    cryptonite,
+    libh2na,
+    memory,
+
+  ghc-options:
+    -O
+    -threaded
+    -rtsopts
+    "-with-rtsopts=-N4"
+
+  hs-source-dirs:
+    bench
+
+  main-is:
+    Main.hs
