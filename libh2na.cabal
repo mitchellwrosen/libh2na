@@ -9,12 +9,16 @@ library
     bytestring,
     cryptonite,
     memory,
+    pedersen-commitment,
     transformers
 
   default-extensions:
     ScopedTypeVariables
+    StrictData
+    TypeApplications
 
   exposed-modules:
+    H2NA.Commitment
     H2NA.SecretBox
 
   ghc-options:
