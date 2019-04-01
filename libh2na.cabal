@@ -22,6 +22,7 @@ library
     H2NA.Commitment
     H2NA.Hash
     H2NA.PublicKey
+    H2NA.Salt
     H2NA.SecretBox
     H2NA.SecretKey
 

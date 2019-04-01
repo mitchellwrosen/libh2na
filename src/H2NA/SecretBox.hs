@@ -8,9 +8,6 @@ module H2NA.SecretBox
   , Nonce
   , generateNonce
   , defaultNonce
-  , Plaintext
-  , Ciphertext
-  , Signature
   ) where
 
 import H2NA.Internal (SecretKey(..))
@@ -37,15 +34,6 @@ import qualified Data.ByteArray.Hash          as ByteArray.Hash
 import qualified Data.ByteString              as ByteString
 
 
-type Plaintext
-  = ByteString
-
-type Ciphertext
-  = ByteString
-
-type Signature
-  = ByteString
-
 newtype Nonce
   = Nonce ChaCha.Nonce
 
@@ -70,11 +58,20 @@ defaultNonce =
 --
 -- If the key is used more than once, then the nonce should be randomly
 -- generated with 'generateNonce'. Otherwise, you may use 'defaultNonce'.
-encrypt :: SecretKey -> Nonce -> Plaintext -> Ciphertext
+--
+-- /Implementation/: @ChaCha20@, @Poly1305@
+encrypt ::
+     SecretKey
+  -> Nonce
+  -> ByteString -- ^ Plaintext
+  -> ByteString -- ^ Ciphertext
 encrypt key (Nonce nonce) plaintext =
   evalState (encryptS nonce plaintext) (initializeChaCha key nonce)
 
-encryptS :: ChaCha.Nonce -> Plaintext -> State ChaCha.State Ciphertext
+encryptS ::
+     ChaCha.Nonce
+  -> ByteString
+  -> State ChaCha.State ByteString
 encryptS nonce plaintext = do
   modify' (ChaCha.appendAAD nonce)
   modify' ChaCha.finalizeAAD
@@ -89,7 +86,12 @@ encryptS nonce plaintext = do
 
 -- | Decrypt and verify a message with the secret key that was used to encrypt
 -- and sign it.
-decrypt :: SecretKey -> Ciphertext -> Maybe Plaintext
+--
+-- /Implementation/: @ChaCha20@, @Poly1305@
+decrypt ::
+     SecretKey
+  -> ByteString -- ^ Ciphertext
+  -> Maybe ByteString -- ^ Plaintext
 decrypt key payload0 = do
   let
     (authBytes, payload1) =
@@ -124,13 +126,18 @@ initializeChaCha (SecretKey key) nonce =
 
 -- | Sign a message with a secret key.
 --
--- To verify that a message was signed by a particular secret key, given the
--- message and a signature, simply re-sign the message and compare the
--- signatures.
-sign :: SecretKey -> ByteString -> Signature
+-- To verify the authenticity of a message was signed by a particular secret
+-- key, simply re-sign the message and compare the signatures.
+--
+-- /Implementation/: @HMAC-BLAKE2b-256@
+sign ::
+     SecretKey
+  -> ByteString -- ^ Message
+  -> ByteString -- ^ Signature
 sign (SecretKey key) message =
   ByteArray.convert (HMAC.hmac key message :: HMAC.HMAC Hash.Blake2b_256)
 
+-- | /Implementation/: @SipHash 2-4@
 shortsign :: SecretKey -> ByteString -> Word64
 shortsign key message =
   case ByteArray.Hash.sipHash (sipkey key) message of
