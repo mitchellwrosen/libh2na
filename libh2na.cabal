@@ -1,0 +1,18 @@
+cabal-version: 2.4
+
+name: libh2na
+version: 0
+
+library
+  build-depends:
+    base,
+    cryptonite,
+
+  ghc-options:
+    -Wall
+
+  exposed-modules:
+    H2NA.Secret
+
+  hs-source-dirs:
+    src
