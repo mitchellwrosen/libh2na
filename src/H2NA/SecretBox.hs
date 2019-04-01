@@ -11,10 +11,12 @@ module H2NA.SecretBox
   , Ciphertext
   ) where
 
-import Control.Monad   (guard)
-import Crypto.Error    (CryptoFailable(..))
-import Data.ByteArray  (Bytes)
-import Data.ByteString (ByteString)
+import Control.Monad             (guard)
+import Control.Monad.Trans.State
+import Crypto.Error              (CryptoFailable(..))
+import Data.ByteArray            (Bytes)
+import Data.ByteString           (ByteString)
+import Data.Function             ((&))
 
 import qualified Crypto.Cipher.ChaChaPoly1305 as ChaCha
 import qualified Crypto.MAC.Poly1305          as Poly1305
@@ -51,35 +53,50 @@ generateNonce = do
 
 encrypt :: SecretKey -> Nonce -> Plaintext -> Ciphertext
 encrypt key (Nonce nonce) plaintext =
-  ByteArray.convert auth <> ciphertext
+  evalState (encryptS nonce plaintext) (initialize key nonce)
 
-  where
-    (ciphertext, state) =
-      ChaCha.encrypt plaintext (initialize key nonce)
+encryptS :: ChaCha.Nonce -> Plaintext -> State ChaCha.State Ciphertext
+encryptS nonce plaintext = do
+  modify' (ChaCha.appendAAD nonce)
+  modify' ChaCha.finalizeAAD
+  ciphertext <- state (ChaCha.encrypt plaintext)
+  chacha <- get
+  pure
+    (ByteString.concat
+      [ ByteArray.convert (ChaCha.finalize chacha)
+      , ByteArray.convert nonce
+      , ciphertext
+      ])
 
-    auth :: Poly1305.Auth
-    auth =
-      ChaCha.finalize state
-
-decrypt :: SecretKey -> Nonce -> Ciphertext -> Maybe Plaintext
-decrypt key (Nonce nonce) payload = do
+decrypt :: SecretKey -> Ciphertext -> Maybe Plaintext
+decrypt key payload0 = do
   let
-    (authBytes, ciphertext) =
-      ByteString.splitAt 16 payload
+    (authBytes, payload1) =
+      ByteString.splitAt 16 payload0
 
   CryptoPassed auth <-
     Just (Poly1305.authTag authBytes)
 
   let
-    (plaintext, state) =
-      ChaCha.decrypt ciphertext (initialize key nonce)
+    (nonceBytes, ciphertext) =
+      ByteString.splitAt 12 payload1
 
-  guard (auth == ChaCha.finalize state)
+  CryptoPassed nonce <-
+    Just (ChaCha.nonce12 nonceBytes)
+
+  let
+    (plaintext, chacha) =
+      initialize key nonce
+        & ChaCha.appendAAD nonce
+        & ChaCha.finalizeAAD
+        & ChaCha.decrypt ciphertext
+
+  guard (auth == ChaCha.finalize chacha)
 
   pure plaintext
 
 initialize :: SecretKey -> ChaCha.Nonce -> ChaCha.State
 initialize (SecretKey key) nonce =
   case ChaCha.initialize key nonce of
-    CryptoPassed state ->
-      state
+    CryptoPassed chacha ->
+      chacha
