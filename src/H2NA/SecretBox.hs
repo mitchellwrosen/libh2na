@@ -26,6 +26,7 @@ import System.IO.Unsafe          (unsafeDupablePerformIO)
 
 import qualified Crypto.Cipher.ChaChaPoly1305 as ChaCha
 import qualified Crypto.Hash.Algorithms       as Hash
+import qualified Crypto.KDF.HKDF              as HKDF
 import qualified Crypto.MAC.HMAC              as HMAC
 import qualified Crypto.MAC.Poly1305          as Poly1305
 import qualified Crypto.Random                as Random
@@ -34,6 +35,7 @@ import qualified Data.ByteArray.Hash          as ByteArray.Hash
 import qualified Data.ByteString              as ByteString
 
 
+-- | A nonce.
 newtype Nonce
   = Nonce ChaCha.Nonce
 
@@ -59,7 +61,7 @@ defaultNonce =
 -- If the key is used more than once, then the nonce should be randomly
 -- generated with 'generateNonce'. Otherwise, you may use 'defaultNonce'.
 --
--- /Implementation/: @ChaCha20@, @Poly1305@
+-- /Implementation/: @ChaCha20@, @HKDF@, @Poly1305@
 encrypt ::
      SecretKey
   -> Nonce
@@ -87,7 +89,7 @@ encryptS nonce plaintext = do
 -- | Decrypt and verify a message with the secret key that was used to encrypt
 -- and sign it.
 --
--- /Implementation/: @ChaCha20@, @Poly1305@
+-- /Implementation/: @ChaCha20@, @HKDF@, @Poly1305@
 decrypt ::
      SecretKey
   -> ByteString -- ^ Ciphertext
@@ -120,7 +122,7 @@ decrypt key payload0 = do
 
 initializeChaCha :: SecretKey -> ChaCha.Nonce -> ChaCha.State
 initializeChaCha (SecretKey key) nonce =
-  case ChaCha.initialize key nonce of
+  case ChaCha.initialize (HKDF.extractSkip key) nonce of
     CryptoPassed chacha ->
       chacha
 
@@ -129,13 +131,14 @@ initializeChaCha (SecretKey key) nonce =
 -- To verify the authenticity of a message was signed by a particular secret
 -- key, simply re-sign the message and compare the signatures.
 --
--- /Implementation/: @HMAC-BLAKE2b-256@
+-- /Implementation/: @HKDF@, @HMAC-BLAKE2b-256@
 sign ::
      SecretKey
   -> ByteString -- ^ Message
   -> ByteString -- ^ Signature
 sign (SecretKey key) message =
-  ByteArray.convert (HMAC.hmac key message :: HMAC.HMAC Hash.Blake2b_256)
+  ByteArray.convert
+    (HMAC.hmac (HKDF.extractSkip key) message :: HMAC.HMAC Hash.Blake2b_256)
 
 -- | /Implementation/: @SipHash 2-4@
 shortsign :: SecretKey -> ByteString -> Word64
@@ -147,7 +150,7 @@ shortsign key message =
 sipkey :: SecretKey -> ByteArray.Hash.SipKey
 sipkey (SecretKey key) =
   unsafeDupablePerformIO
-    (ByteArray.withByteArray key $ \ptr -> do
+    (ByteArray.withByteArray (HKDF.extractSkip key) $ \ptr -> do
       b0  :: Word8 <- peek ptr
       b1  :: Word8 <- peek (ptr `plusPtr` 1)
       b2  :: Word8 <- peek (ptr `plusPtr` 2)

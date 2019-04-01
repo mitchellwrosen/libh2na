@@ -16,6 +16,7 @@ library
 
   default-extensions:
     LambdaCase
+    OverloadedStrings
     ScopedTypeVariables
     StrictData
     TypeApplications
@@ -39,6 +40,9 @@ library
     H2NA.Internal
 
 executable bench
+  buildable:
+    False
+
   build-depends:
     base,
     bytestring,
@@ -46,6 +50,9 @@ executable bench
     cryptonite,
     libh2na,
     memory,
+
+  default-language:
+    Haskell2010
 
   ghc-options:
     -O
