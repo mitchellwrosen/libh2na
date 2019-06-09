@@ -32,6 +32,7 @@ library
     bytestring,
     cryptonite,
     foldl,
+    list-transformer ^>= 1.0,
     memory,
     text,
     transformers,

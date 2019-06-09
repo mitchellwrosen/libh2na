@@ -8,6 +8,7 @@ module H2NA.SecretBox
     encrypt
   , encryptIO
   , encryptDetached
+  , encryptSequence
     -- ** Decryption
   , decrypt
   , decryptDetached
@@ -24,6 +25,7 @@ module H2NA.SecretBox
 
 import H2NA.Internal (SecretKey(..))
 
+import Control.Applicative       ((<|>))
 import Control.Monad             (guard)
 import Control.Monad.IO.Class
 import Control.Monad.Trans.State
@@ -36,6 +38,7 @@ import Data.Function             ((&))
 import Data.Word                 (Word64, Word8)
 import Foreign.Ptr               (plusPtr)
 import Foreign.Storable          (peek)
+import List.Transformer          (ListT)
 import System.IO.Unsafe          (unsafeDupablePerformIO)
 
 import qualified Crypto.Cipher.ChaChaPoly1305 as ChaCha
@@ -50,6 +53,7 @@ import qualified Data.ByteArray.Encoding      as ByteArray.Encoding
 import qualified Data.ByteArray.Hash          as ByteArray.Hash
 import qualified Data.ByteString              as ByteString
 import qualified Data.ByteString.Char8        as ByteString.Char8
+import qualified List.Transformer             as ListT
 
 
 -- | A nonce.
@@ -103,6 +107,10 @@ instance Show Nonce where
       & ByteArray.Encoding.convertToBase ByteArray.Encoding.Base64
       & ByteString.Char8.unpack
 
+nonceToBytes :: Nonce -> ByteString
+nonceToBytes =
+  coerce (ByteArray.convert :: ChaCha.Nonce -> ByteString)
+
 -- | The "zero" nonce.
 --
 -- This is only suitable for encrypting a message with a single-use secret key.
@@ -136,14 +144,14 @@ encrypt ::
   -> Nonce -- ^ Nonce
   -> ByteString -- ^ Plaintext
   -> ByteString -- ^ Ciphertext
-encrypt key (Nonce nonce) plaintext =
+encrypt key nonce plaintext =
   let
     (ciphertext, signature) =
       evalState (encryptS nonce plaintext) (initializeChaCha key nonce)
   in
     ByteString.concat
       [ signature
-      , ByteArray.convert nonce
+      , nonceToBytes nonce
       , ciphertext
       ]
 
@@ -160,24 +168,52 @@ encryptIO key plaintext = do
 -- | A variant of 'encrypt' that does not combine the ciphertext with the
 -- message signature.
 --
--- This is necessary if you want to store the signature separately.
+-- This is useful if you want to store the signature separately.
 encryptDetached ::
      SecretKey -- ^ Secret key
   -> Nonce -- ^ Nonce
   -> ByteString -- ^ Plaintext
   -> (ByteString, Signature) -- ^ Ciphertext and signature
-encryptDetached key (Nonce nonce) plaintext =
+encryptDetached key nonce plaintext =
   let
     (ciphertext, signature) =
       evalState (encryptS nonce plaintext) (initializeChaCha key nonce)
   in
-    (ByteArray.convert nonce <> ciphertext, Signature signature)
+    (nonceToBytes nonce <> ciphertext, Signature signature)
+
+-- | A variant of 'encrypt' suitable for encrypting a sequence of messages.
+encryptSequence ::
+     forall m.
+     Monad m
+  => SecretKey -- ^ SecretKey
+  -> Nonce -- ^ Nonce
+  -> ListT m ByteString -- ^ Plaintext sequence
+  -> ListT m ByteString -- ^ Ciphertext sequence
+encryptSequence key nonce0 plaintext0 =
+  pure (nonceToBytes nonce0) <|> ListT.unfold step (nonce0, plaintext0)
+
+  where
+    step ::
+         (Nonce, ListT m ByteString)
+      -> m (Maybe (ByteString, (Nonce, ListT m ByteString)))
+    step (nonce, plaintext) =
+      ListT.next plaintext >>= \case
+        ListT.Nil ->
+          pure Nothing
+
+        ListT.Cons x xs ->
+          let
+            (ciphertext, signature) =
+              evalState (encryptS nonce x) (initializeChaCha key nonce)
+          in
+            pure (Just (signature <> ciphertext, (succ nonce, xs)))
+
 
 encryptS ::
-     ChaCha.Nonce
+     Nonce
   -> ByteString
   -> State ChaCha.State (ByteString, ByteString)
-encryptS nonce plaintext = do
+encryptS (Nonce nonce) plaintext = do
   modify' (ChaCha.appendAAD nonce)
   modify' ChaCha.finalizeAAD
   ciphertext <- state (ChaCha.encrypt plaintext)
@@ -219,7 +255,7 @@ decryptDetached key payload1 (Signature signatureBytes) = do
 
   let
     (plaintext, chacha) =
-      initializeChaCha key nonce
+      initializeChaCha key (Nonce nonce)
         & ChaCha.appendAAD nonce
         & ChaCha.finalizeAAD
         & ChaCha.decrypt ciphertext
@@ -228,8 +264,8 @@ decryptDetached key payload1 (Signature signatureBytes) = do
 
   pure plaintext
 
-initializeChaCha :: SecretKey -> ChaCha.Nonce -> ChaCha.State
-initializeChaCha (SecretKey key) nonce =
+initializeChaCha :: SecretKey -> Nonce -> ChaCha.State
+initializeChaCha (SecretKey key) (Nonce nonce) =
   case ChaCha.initialize (HKDF.extractSkip key) nonce of
     CryptoPassed chacha ->
       chacha
