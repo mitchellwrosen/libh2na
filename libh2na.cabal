@@ -10,7 +10,6 @@ library
     cryptonite,
     foldl,
     memory,
-    pedersen-commitment,
     text,
     transformers
 
@@ -23,7 +22,6 @@ library
     ViewPatterns
 
   exposed-modules:
-    H2NA.Commitment
     H2NA.Hash
     H2NA.Password
     H2NA.PublicKey
