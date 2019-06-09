@@ -9,8 +9,10 @@ common common
 
   default-extensions:
     BlockArguments
+    DataKinds
     DerivingStrategies
     GeneralizedNewtypeDeriving
+    KindSignatures
     LambdaCase
     OverloadedStrings
     ScopedTypeVariables
@@ -50,6 +52,9 @@ library
 
   other-modules:
     H2NA.Internal
+    H2NA.Internal.AEAD
+    H2NA.Internal.KDF
+    H2NA.Internal.Signature
 
 test-suite tests
   import:

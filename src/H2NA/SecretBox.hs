@@ -25,115 +25,32 @@ module H2NA.SecretBox
   , Signature(..)
   ) where
 
-import H2NA.Internal (SecretKey(..))
+import H2NA.Internal           (SecretKey(..))
+import H2NA.Internal.AEAD
+import H2NA.Internal.KDF       (deriveKey)
+import H2NA.Internal.Signature
 
 import Control.Applicative       (empty, (<|>))
 import Control.Monad             (guard)
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.Maybe
-import Control.Monad.Trans.State
-import Crypto.Error              (CryptoFailable(..))
 import Data.Bits                 (unsafeShiftL, (.|.))
-import Data.ByteArray            (ByteArray, Bytes)
 import Data.ByteString           (ByteString)
 import Data.Coerce               (coerce)
-import Data.Function             ((&))
-import Data.Maybe                (fromJust)
 import Data.Word                 (Word64, Word8)
 import Foreign.Ptr               (plusPtr)
 import Foreign.Storable          (peek)
 import List.Transformer          (ListT)
 import System.IO.Unsafe          (unsafeDupablePerformIO)
 
-import qualified Crypto.Cipher.ChaChaPoly1305 as ChaCha
-import qualified Crypto.Hash.Algorithms       as Hash
-import qualified Crypto.KDF.HKDF              as HKDF
-import qualified Crypto.MAC.HMAC              as HMAC
-import qualified Crypto.MAC.Poly1305          as Poly1305
-import qualified Crypto.Number.Serialize      as Number
-import qualified Crypto.Random                as Random
-import qualified Data.ByteArray               as ByteArray
-import qualified Data.ByteArray.Encoding      as ByteArray.Encoding
-import qualified Data.ByteArray.Hash          as ByteArray.Hash
-import qualified Data.ByteString              as ByteString
-import qualified Data.ByteString.Char8        as ByteString.Char8
-import qualified List.Transformer             as ListT
-
-
--- | A nonce.
---
--- Given a initial nonce, you can generate an infinite list of related nonces
--- with the 'Enum' instance:
---
--- @
--- [ nonce .. ]
--- @
-newtype Nonce
-  = Nonce ChaCha.Nonce
-
-instance Enum Nonce where
-  fromEnum (Nonce nonce) =
-    fromIntegral (Number.os2ip nonce)
-
-  pred (Nonce nonce) =
-    let
-      n :: Integer
-      n =
-        case Number.os2ip nonce of
-          0 ->
-            79228162514264337593543950335 -- The maximum nonce, 12 bytes of 1s
-
-          i ->
-            i - 1
-    in
-      fromJust (bytesToNonce (Number.i2ospOf_ 12 n :: Bytes))
-
-  succ (Nonce nonce) =
-    case Number.i2ospOf 12 (Number.os2ip nonce + 1) of
-      Nothing ->
-        zeroNonce
-      Just bytes ->
-        fromJust (bytesToNonce (bytes :: Bytes))
-
-  toEnum n =
-    fromJust (bytesToNonce (Number.i2ospOf_ 12 (fromIntegral n) :: Bytes))
-
--- | Base64-encoded nonce.
-instance Show Nonce where
-  show (Nonce nonce) =
-    nonce
-      & ByteArray.Encoding.convertToBase ByteArray.Encoding.Base64
-      & ByteString.Char8.unpack
-
-nonceToBytes :: Nonce -> ByteString
-nonceToBytes =
-  coerce (ByteArray.convert :: ChaCha.Nonce -> ByteString)
-
-bytesToNonce :: ByteArray bytes => bytes -> Maybe Nonce
-bytesToNonce bytes =
-  case ChaCha.nonce12 bytes of
-    CryptoPassed nonce ->
-      Just (Nonce nonce)
-    _ ->
-      Nothing
-
--- | The "zero" nonce.
---
--- This is only suitable for encrypting a message with a single-use secret key.
--- If you encrypt more than one message with a secret key, you must use a
--- different nonce each time.
-zeroNonce :: Nonce
-zeroNonce =
-  fromJust (bytesToNonce (ByteString.replicate 12 0))
-
--- | Generate a random nonce.
-generateNonce :: MonadIO m => m Nonce
-generateNonce = liftIO $ do
-  bytes :: Bytes <-
-    Random.getRandomBytes 12
-
-  pure (fromJust (bytesToNonce bytes))
+import qualified Crypto.Hash.Algorithms as Hash
+import qualified Crypto.MAC.HMAC        as HMAC
+import qualified Crypto.MAC.Poly1305    as Poly1305
+import qualified Data.ByteArray         as ByteArray
+import qualified Data.ByteArray.Hash    as ByteArray.Hash
+import qualified Data.ByteString        as ByteString
+import qualified List.Transformer       as ListT
 
 
 -- | Encrypt and sign a message with a secret key and a nonce.
@@ -149,11 +66,11 @@ encrypt ::
   -> ByteString -- ^ Ciphertext
 encrypt key nonce plaintext =
   let
-    (ciphertext, signature) =
-      evalState (encryptS nonce plaintext) (initializeChaCha key nonce)
+    (ciphertext, auth) =
+      aeadEncrypt key nonce plaintext
   in
     ByteString.concat
-      [ signature
+      [ coerce (authToSignature auth)
       , nonceToBytes nonce
       , ciphertext
       ]
@@ -179,10 +96,10 @@ encryptDetached ::
   -> (ByteString, Signature) -- ^ Ciphertext and signature
 encryptDetached key nonce plaintext =
   let
-    (ciphertext, signature) =
-      evalState (encryptS nonce plaintext) (initializeChaCha key nonce)
+    (ciphertext, auth) =
+      aeadEncrypt key nonce plaintext
   in
-    (nonceToBytes nonce <> ciphertext, Signature signature)
+    (nonceToBytes nonce <> ciphertext, authToSignature auth)
 
 -- | A variant of 'encrypt' suitable for encrypting a sequence of messages.
 encryptSequence ::
@@ -206,10 +123,10 @@ encryptSequence key nonce0 plaintext0 =
 
         ListT.Cons x xs ->
           let
-            (ciphertext, signature) =
-              evalState (encryptS nonce x) (initializeChaCha key nonce)
+            (ciphertext, auth) =
+              aeadEncrypt key nonce x
           in
-            pure (Just (signature <> ciphertext, (succ nonce, xs)))
+            pure (Just (coerce (authToSignature auth) <> ciphertext, (succ nonce, xs)))
 
 -- | A variant of 'encryptSequence' that generates a random nonce with
 -- 'generateNonce'.
@@ -221,17 +138,6 @@ encryptSequenceIO ::
 encryptSequenceIO key plaintext = do
   nonce <- liftIO generateNonce
   encryptSequence key nonce plaintext
-
-encryptS ::
-     Nonce
-  -> ByteString
-  -> State ChaCha.State (ByteString, ByteString)
-encryptS (Nonce nonce) plaintext = do
-  modify' (ChaCha.appendAAD nonce)
-  modify' ChaCha.finalizeAAD
-  ciphertext <- state (ChaCha.encrypt plaintext)
-  chacha <- get
-  pure (ciphertext, ByteArray.convert (ChaCha.finalize chacha))
 
 -- | Decrypt and verify a message with the secret key that was used to encrypt
 -- and sign it.
@@ -248,7 +154,7 @@ decrypt key payload0 =
       ByteString.splitAt 16 payload0
 
 
--- | Variant of 'decrypt' that is used to decrypt messages encrypted with
+-- | A variant of 'decrypt' that is used to decrypt messages encrypted with
 -- 'encryptDetached'.
 decryptDetached ::
      SecretKey -- ^ Secret key
@@ -272,17 +178,14 @@ decryptDetached_ ::
   -> Signature
   -> Maybe ByteString
 decryptDetached_ key nonce ciphertext (Signature signatureBytes) = do
-  CryptoPassed signature <-
-    Just (Poly1305.authTag signatureBytes)
+  expectedAuth :: Poly1305.Auth <-
+    bytesToAuth signatureBytes
 
   let
-    (plaintext, chacha) =
-      initializeChaCha key nonce
-        & ChaCha.appendAAD (coerce nonce :: ChaCha.Nonce)
-        & ChaCha.finalizeAAD
-        & ChaCha.decrypt ciphertext
+    (plaintext, actualAuth) =
+      aeadDecrypt key nonce ciphertext
 
-  guard (signature == ChaCha.finalize chacha)
+  guard (actualAuth == expectedAuth)
 
   pure plaintext
 
@@ -328,30 +231,6 @@ decryptSequence key payload0 =
                 pure (Just (plaintext, (succ nonce, xs)))
 
 
-initializeChaCha :: SecretKey -> Nonce -> ChaCha.State
-initializeChaCha (SecretKey key) (Nonce nonce) =
-  case ChaCha.initialize (HKDF.extractSkip key) nonce of
-    CryptoPassed chacha ->
-      chacha
-
-
--- | A message signature with a constant-time 'Eq' instance.
-newtype Signature
-  = Signature { unSignature :: ByteString }
-
--- | Constant-time comparison.
-instance Eq Signature where
-  Signature x == Signature y =
-    ByteArray.constEq x y
-
--- | Base64-encoded signature.
-instance Show Signature where
-  show (Signature sig) =
-    sig
-      & ByteArray.Encoding.convertToBase ByteArray.Encoding.Base64
-      & ByteString.Char8.unpack
-
-
 -- | Sign a message with a secret key, producing a 32-byte signature.
 --
 -- To verify the authenticity of a message was signed by a particular secret
@@ -366,8 +245,8 @@ sign =
   coerce sign_
 
 sign_ :: SecretKey -> ByteString -> ByteString
-sign_ (SecretKey key) =
-  ByteArray.convert . HMAC.hmac @_ @_ @Hash.Blake2b_256 (HKDF.extractSkip key)
+sign_ key =
+  ByteArray.convert . HMAC.hmac @_ @_ @Hash.Blake2b_256 (deriveKey key)
 
 -- | Sign a message with a secret key.
 --
@@ -385,9 +264,9 @@ shortsign key message =
       hash
 
 sipkey :: SecretKey -> ByteArray.Hash.SipKey
-sipkey (SecretKey key) =
+sipkey key =
   unsafeDupablePerformIO
-    (ByteArray.withByteArray (HKDF.extractSkip key) $ \ptr -> do
+    (ByteArray.withByteArray (deriveKey key) $ \ptr -> do
       b0  :: Word8 <- peek ptr
       b1  :: Word8 <- peek (ptr `plusPtr` 1)
       b2  :: Word8 <- peek (ptr `plusPtr` 2)

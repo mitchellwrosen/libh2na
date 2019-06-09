@@ -7,7 +7,7 @@ module H2NA.SecretKey
   , bytesToSecretKey
   ) where
 
-import H2NA.Internal (PublicKey(..), SecretKey(..))
+import H2NA.Internal     (PublicKey(..), SecretKey(..))
 
 import Control.Monad.IO.Class
 import Crypto.Error           (CryptoFailable(..))
@@ -40,7 +40,7 @@ secretKeyToBytes ::
      SecretKey -- ^
   -> ByteString
 secretKeyToBytes =
-  ByteArray.convert . unSecretKey
+  coerce (ByteArray.convert :: Curve25519.SecretKey -> ByteString)
 
 -- | Read a secret key from a 32-byte string.
 bytesToSecretKey ::
@@ -52,4 +52,3 @@ bytesToSecretKey bytes =
       Just (SecretKey key)
     _ ->
       Nothing
-
