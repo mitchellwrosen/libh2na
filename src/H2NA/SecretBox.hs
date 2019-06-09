@@ -9,6 +9,7 @@ module H2NA.SecretBox
   , encryptIO
   , encryptDetached
   , encryptSequence
+  , encryptSequenceIO
     -- ** Decryption
   , decrypt
   , decryptDetached
@@ -210,6 +211,16 @@ encryptSequence key nonce0 plaintext0 =
           in
             pure (Just (signature <> ciphertext, (succ nonce, xs)))
 
+-- | A variant of 'encryptSequence' that generates a random nonce with
+-- 'generateNonce'.
+encryptSequenceIO ::
+     MonadIO m
+  => SecretKey -- ^ SecretKey
+  -> ListT m ByteString -- ^ Plaintext sequence
+  -> ListT m ByteString -- ^ Ciphertext sequence
+encryptSequenceIO key plaintext = do
+  nonce <- liftIO generateNonce
+  encryptSequence key nonce plaintext
 
 encryptS ::
      Nonce
