@@ -1,11 +1,9 @@
-{-# OPTIONS_GHC -fno-warn-incomplete-patterns #-}
-
 module H2NA.Hash
   ( hash
   , hashFold
   ) where
 
-import Control.Foldl          (Fold(..))
+import Control.Foldl          (FoldM(..))
 import Crypto.Hash.Algorithms (Blake2b_256)
 import Data.ByteString        (ByteString)
 
@@ -23,9 +21,9 @@ hash =
 -- | Hash a stream of messages to a 32-byte digest.
 --
 -- /Implementation/: @BLAKE2b@
-hashFold :: Fold ByteString ByteString
+hashFold :: Monad m => FoldM m ByteString ByteString
 hashFold =
-  Fold
-    Hash.hashUpdate
-    (Hash.hashInit @Blake2b_256)
-    (ByteArray.convert . Hash.hashFinalize)
+  FoldM
+    (\a b -> pure (Hash.hashUpdate a b))
+    (pure (Hash.hashInit @Blake2b_256))
+    (pure . ByteArray.convert . Hash.hashFinalize)
