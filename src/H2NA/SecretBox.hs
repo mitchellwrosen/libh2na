@@ -18,7 +18,6 @@ module H2NA.SecretBox
   , Nonce
   , zeroNonce
   , generateNonce
-  , incrementNonce
     -- ** Signature
   , Signature(..)
   ) where
@@ -54,6 +53,13 @@ import qualified Data.ByteString.Char8        as ByteString.Char8
 
 
 -- | A nonce.
+--
+-- Given a initial nonce, you can generate an infinite list of related nonces
+-- with the 'Enum' instance:
+--
+-- @
+-- [ nonce .. ]
+-- @
 newtype Nonce
   = Nonce ChaCha.Nonce
 
@@ -67,7 +73,7 @@ instance Enum Nonce where
       n =
         case Number.os2ip nonce of
           0 ->
-            79228162514264337593543950335
+            79228162514264337593543950335 -- The maximum nonce, 12 bytes of 1s
 
           i ->
             i - 1
@@ -76,8 +82,14 @@ instance Enum Nonce where
         CryptoPassed nonce' ->
           Nonce nonce'
 
-  succ =
-    incrementNonce
+  succ (Nonce nonce) =
+    case Number.i2ospOf 12 (Number.os2ip nonce + 1) of
+      Nothing ->
+        zeroNonce
+      Just (bytes :: Bytes) ->
+        case ChaCha.nonce12 bytes of
+          CryptoPassed nonce' ->
+            Nonce nonce'
 
   toEnum n =
     case ChaCha.nonce12 (Number.i2ospOf_ 12 (fromIntegral n) :: Bytes) of
@@ -111,19 +123,6 @@ generateNonce = liftIO $ do
   case ChaCha.nonce12 bytes of
     CryptoPassed nonce ->
       pure (Nonce nonce)
-
--- | Increment a nonce.
-incrementNonce ::
-     Nonce -- ^
-  -> Nonce
-incrementNonce (Nonce nonce) =
-  case Number.i2ospOf 12 (Number.os2ip nonce + 1) of
-    Nothing ->
-      zeroNonce
-    Just (bytes :: Bytes) ->
-      case ChaCha.nonce12 bytes of
-        CryptoPassed nonce' ->
-          Nonce nonce'
 
 
 -- | Encrypt and sign a message with a secret key and a nonce.
