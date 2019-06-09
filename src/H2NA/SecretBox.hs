@@ -16,8 +16,9 @@ module H2NA.SecretBox
   , shortsign
     -- ** Nonce
   , Nonce
+  , zeroNonce
   , generateNonce
-  , defaultNonce
+  , incrementNonce
     -- ** Signature
   , Signature(..)
   ) where
@@ -43,6 +44,7 @@ import qualified Crypto.Hash.Algorithms       as Hash
 import qualified Crypto.KDF.HKDF              as HKDF
 import qualified Crypto.MAC.HMAC              as HMAC
 import qualified Crypto.MAC.Poly1305          as Poly1305
+import qualified Crypto.Number.Serialize      as Number
 import qualified Crypto.Random                as Random
 import qualified Data.ByteArray               as ByteArray
 import qualified Data.ByteArray.Encoding      as ByteArray.Encoding
@@ -55,12 +57,50 @@ import qualified Data.ByteString.Char8        as ByteString.Char8
 newtype Nonce
   = Nonce ChaCha.Nonce
 
+instance Enum Nonce where
+  fromEnum (Nonce nonce) =
+    fromIntegral (Number.os2ip nonce)
+
+  pred (Nonce nonce) =
+    let
+      n :: Integer
+      n =
+        case Number.os2ip nonce of
+          0 ->
+            79228162514264337593543950335
+
+          i ->
+            i - 1
+    in
+      case ChaCha.nonce12 (Number.i2ospOf_ 12 n :: Bytes) of
+        CryptoPassed nonce' ->
+          Nonce nonce'
+
+  succ =
+    incrementNonce
+
+  toEnum n =
+    case ChaCha.nonce12 (Number.i2ospOf_ 12 (fromIntegral n) :: Bytes) of
+      CryptoPassed nonce ->
+        Nonce nonce
+
 -- | Base64-encoded nonce.
 instance Show Nonce where
   show (Nonce nonce) =
     nonce
       & ByteArray.Encoding.convertToBase ByteArray.Encoding.Base64
       & ByteString.Char8.unpack
+
+-- | The "zero" nonce.
+--
+-- This is only suitable for encrypting a message with a single-use secret key.
+-- If you encrypt more than one message with a secret key, you must use a
+-- different nonce each time.
+zeroNonce :: Nonce
+zeroNonce =
+  case ChaCha.nonce12 (ByteString.replicate 12 0) of
+    CryptoPassed nonce ->
+      Nonce nonce
 
 -- | Generate a random nonce.
 generateNonce :: MonadIO m => m Nonce
@@ -72,21 +112,24 @@ generateNonce = liftIO $ do
     CryptoPassed nonce ->
       pure (Nonce nonce)
 
--- | The default nonce.
---
--- This is only suitable for encrypting a message with a single-use secret key.
--- If you encrypt more than one message with a secret key, you must use a
--- different nonce each time.
-defaultNonce :: Nonce
-defaultNonce =
-  case ChaCha.nonce12 (ByteString.replicate 12 0) of
-    CryptoPassed nonce ->
-      Nonce nonce
+-- | Increment a nonce.
+incrementNonce ::
+     Nonce -- ^
+  -> Nonce
+incrementNonce (Nonce nonce) =
+  case Number.i2ospOf 12 (Number.os2ip nonce + 1) of
+    Nothing ->
+      zeroNonce
+    Just (bytes :: Bytes) ->
+      case ChaCha.nonce12 bytes of
+        CryptoPassed nonce' ->
+          Nonce nonce'
+
 
 -- | Encrypt and sign a message with a secret key and a nonce.
 --
 -- If the key is used more than once, then the nonce should be randomly
--- generated with 'generateNonce'. Otherwise, you may use 'defaultNonce'.
+-- generated with 'generateNonce'. Otherwise, you may use 'zeroNonce'.
 --
 -- /Implementation/: @ChaCha20@, @HKDF@, @Poly1305@
 encrypt ::
@@ -185,10 +228,6 @@ decryptDetached key payload1 (Signature signatureBytes) = do
   guard (signature == ChaCha.finalize chacha)
 
   pure plaintext
-
--- decryptDetached_ ::
---      SecretKey
---   ->
 
 initializeChaCha :: SecretKey -> ChaCha.Nonce -> ChaCha.State
 initializeChaCha (SecretKey key) nonce =
