@@ -12,6 +12,7 @@ module H2NA.SecretBox
     -- ** Decryption
   , decrypt
   , decryptDetached
+  , decryptSequence
     -- ** Signing
   , sign
   , shortsign
@@ -25,16 +26,19 @@ module H2NA.SecretBox
 
 import H2NA.Internal (SecretKey(..))
 
-import Control.Applicative       ((<|>))
+import Control.Applicative       (empty, (<|>))
 import Control.Monad             (guard)
 import Control.Monad.IO.Class
+import Control.Monad.Trans.Class
+import Control.Monad.Trans.Maybe
 import Control.Monad.Trans.State
 import Crypto.Error              (CryptoFailable(..))
 import Data.Bits                 (unsafeShiftL, (.|.))
-import Data.ByteArray            (Bytes)
+import Data.ByteArray            (ByteArray, Bytes)
 import Data.ByteString           (ByteString)
 import Data.Coerce               (coerce)
 import Data.Function             ((&))
+import Data.Maybe                (fromJust)
 import Data.Word                 (Word64, Word8)
 import Foreign.Ptr               (plusPtr)
 import Foreign.Storable          (peek)
@@ -82,23 +86,17 @@ instance Enum Nonce where
           i ->
             i - 1
     in
-      case ChaCha.nonce12 (Number.i2ospOf_ 12 n :: Bytes) of
-        CryptoPassed nonce' ->
-          Nonce nonce'
+      fromJust (bytesToNonce (Number.i2ospOf_ 12 n :: Bytes))
 
   succ (Nonce nonce) =
     case Number.i2ospOf 12 (Number.os2ip nonce + 1) of
       Nothing ->
         zeroNonce
-      Just (bytes :: Bytes) ->
-        case ChaCha.nonce12 bytes of
-          CryptoPassed nonce' ->
-            Nonce nonce'
+      Just bytes ->
+        fromJust (bytesToNonce (bytes :: Bytes))
 
   toEnum n =
-    case ChaCha.nonce12 (Number.i2ospOf_ 12 (fromIntegral n) :: Bytes) of
-      CryptoPassed nonce ->
-        Nonce nonce
+    fromJust (bytesToNonce (Number.i2ospOf_ 12 (fromIntegral n) :: Bytes))
 
 -- | Base64-encoded nonce.
 instance Show Nonce where
@@ -111,6 +109,14 @@ nonceToBytes :: Nonce -> ByteString
 nonceToBytes =
   coerce (ByteArray.convert :: ChaCha.Nonce -> ByteString)
 
+bytesToNonce :: ByteArray bytes => bytes -> Maybe Nonce
+bytesToNonce bytes =
+  case ChaCha.nonce12 bytes of
+    CryptoPassed nonce ->
+      Just (Nonce nonce)
+    _ ->
+      Nothing
+
 -- | The "zero" nonce.
 --
 -- This is only suitable for encrypting a message with a single-use secret key.
@@ -118,9 +124,7 @@ nonceToBytes =
 -- different nonce each time.
 zeroNonce :: Nonce
 zeroNonce =
-  case ChaCha.nonce12 (ByteString.replicate 12 0) of
-    CryptoPassed nonce ->
-      Nonce nonce
+  fromJust (bytesToNonce (ByteString.replicate 12 0))
 
 -- | Generate a random nonce.
 generateNonce :: MonadIO m => m Nonce
@@ -128,9 +132,7 @@ generateNonce = liftIO $ do
   bytes :: Bytes <-
     Random.getRandomBytes 12
 
-  case ChaCha.nonce12 bytes of
-    CryptoPassed nonce ->
-      pure (Nonce nonce)
+  pure (fromJust (bytesToNonce bytes))
 
 
 -- | Encrypt and sign a message with a secret key and a nonce.
@@ -242,27 +244,78 @@ decryptDetached ::
   -> ByteString -- ^ Ciphertext
   -> Signature -- ^ Signature
   -> Maybe ByteString -- ^ Plaintext
-decryptDetached key payload1 (Signature signatureBytes) = do
-  CryptoPassed signature <-
-    Just (Poly1305.authTag signatureBytes)
-
+decryptDetached key payload1 signature = do
   let
     (nonceBytes, ciphertext) =
       ByteString.splitAt 12 payload1
 
-  CryptoPassed nonce <-
-    Just (ChaCha.nonce12 nonceBytes)
+  nonce :: Nonce <-
+    bytesToNonce nonceBytes
+
+  decryptDetached_ key nonce ciphertext signature
+
+decryptDetached_ ::
+     SecretKey
+  -> Nonce
+  -> ByteString
+  -> Signature
+  -> Maybe ByteString
+decryptDetached_ key nonce ciphertext (Signature signatureBytes) = do
+  CryptoPassed signature <-
+    Just (Poly1305.authTag signatureBytes)
 
   let
     (plaintext, chacha) =
-      initializeChaCha key (Nonce nonce)
-        & ChaCha.appendAAD nonce
+      initializeChaCha key nonce
+        & ChaCha.appendAAD (coerce nonce :: ChaCha.Nonce)
         & ChaCha.finalizeAAD
         & ChaCha.decrypt ciphertext
 
   guard (signature == ChaCha.finalize chacha)
 
   pure plaintext
+
+-- | A variant of 'decrypt' suitable for decrypting a sequence of messages.
+decryptSequence ::
+     forall m.
+     Monad m
+  => SecretKey -- ^ Secret key
+  -> ListT m ByteString -- ^ Ciphertext sequence
+  -> ListT (MaybeT m) ByteString -- ^ Plaintext sequence
+decryptSequence key payload0 =
+  lift (lift (ListT.next payload0)) >>= \case
+    ListT.Nil ->
+      lift empty
+
+    ListT.Cons nonceBytes ciphertext ->
+      case bytesToNonce nonceBytes of
+        Nothing ->
+          lift empty
+
+        Just nonce ->
+          ListT.unfold step (nonce, ciphertext)
+
+  where
+    step ::
+         (Nonce, ListT m ByteString)
+      -> MaybeT m (Maybe (ByteString, (Nonce, ListT m ByteString)))
+    step (nonce, payload) =
+      lift (ListT.next payload) >>= \case
+        ListT.Nil ->
+          pure Nothing
+
+        ListT.Cons x xs ->
+          let
+            (signature, ciphertext) =
+              ByteString.splitAt 16 x
+          in
+            case decryptDetached_ key nonce ciphertext (Signature signature) of
+              Nothing ->
+                empty
+
+              Just plaintext ->
+                pure (Just (plaintext, (succ nonce, xs)))
+
 
 initializeChaCha :: SecretKey -> Nonce -> ChaCha.State
 initializeChaCha (SecretKey key) (Nonce nonce) =

@@ -58,10 +58,13 @@ test-suite tests
   build-depends:
     bytestring,
     hedgehog ^>= 1.0,
+    foldl,
     libh2na,
+    list-transformer,
     tasty,
     tasty-hedgehog ^>= 1.0,
     text,
+    transformers,
 
   hs-source-dirs:
     test
