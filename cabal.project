@@ -1,0 +1,7 @@
+packages: .
+
+optimization:
+  False
+
+package libh2na
+  tests: true

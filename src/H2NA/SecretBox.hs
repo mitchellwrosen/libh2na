@@ -13,6 +13,7 @@ module H2NA.SecretBox
 import H2NA.Internal (SecretKey(..))
 
 import Control.Monad             (guard)
+import Control.Monad.IO.Class
 import Control.Monad.Trans.State
 import Crypto.Error              (CryptoFailable(..))
 import Data.Bits                 (unsafeShiftL, (.|.))
@@ -31,17 +32,26 @@ import qualified Crypto.MAC.HMAC              as HMAC
 import qualified Crypto.MAC.Poly1305          as Poly1305
 import qualified Crypto.Random                as Random
 import qualified Data.ByteArray               as ByteArray
+import qualified Data.ByteArray.Encoding      as ByteArray.Encoding
 import qualified Data.ByteArray.Hash          as ByteArray.Hash
 import qualified Data.ByteString              as ByteString
+import qualified Data.ByteString.Char8        as ByteString.Char8
 
 
 -- | A nonce.
 newtype Nonce
   = Nonce ChaCha.Nonce
 
+-- | Base64-encoded nonce.
+instance Show Nonce where
+  show (Nonce nonce) =
+    nonce
+      & ByteArray.Encoding.convertToBase ByteArray.Encoding.Base64
+      & ByteString.Char8.unpack
+
 -- | Generate a random nonce.
-generateNonce :: IO Nonce
-generateNonce = do
+generateNonce :: MonadIO m => m Nonce
+generateNonce = liftIO $ do
   bytes :: Bytes <-
     Random.getRandomBytes 12
 
@@ -63,8 +73,8 @@ defaultNonce =
 --
 -- /Implementation/: @ChaCha20@, @HKDF@, @Poly1305@
 encrypt ::
-     SecretKey
-  -> Nonce
+     SecretKey -- ^ Secret key
+  -> Nonce -- ^ Nonce
   -> ByteString -- ^ Plaintext
   -> ByteString -- ^ Ciphertext
 encrypt key (Nonce nonce) plaintext =
@@ -91,7 +101,7 @@ encryptS nonce plaintext = do
 --
 -- /Implementation/: @ChaCha20@, @HKDF@, @Poly1305@
 decrypt ::
-     SecretKey
+     SecretKey -- ^ Secret key
   -> ByteString -- ^ Ciphertext
   -> Maybe ByteString -- ^ Plaintext
 decrypt key payload0 = do
@@ -140,7 +150,12 @@ sign (SecretKey key) message =
   ByteArray.convert
     (HMAC.hmac (HKDF.extractSkip key) message :: HMAC.HMAC Hash.Blake2b_256)
 
--- | /Implementation/: @SipHash 2-4@
+-- | Sign a message with a secret key.
+--
+-- To verify the authenticity of a message was signed by a particular secret
+-- key, simply re-sign the message and compare the signatures.
+--
+-- /Implementation/: @SipHash 2-4@
 shortsign :: SecretKey -> ByteString -> Word64
 shortsign key message =
   case ByteArray.Hash.sipHash (sipkey key) message of

@@ -6,7 +6,8 @@ module H2NA.SecretKey
 
 import H2NA.Internal (PublicKey(..), SecretKey(..))
 
-import Data.Coerce (coerce)
+import Control.Monad.IO.Class
+import Data.Coerce            (coerce)
 
 import qualified Crypto.PubKey.Curve25519 as Curve25519
 
@@ -14,9 +15,9 @@ import qualified Crypto.PubKey.Curve25519 as Curve25519
 -- | Generate a secret key.
 --
 -- A secret key must never be disclosed.
-generateSecretKey :: IO SecretKey
+generateSecretKey :: MonadIO m => m SecretKey
 generateSecretKey =
-  coerce @(IO Curve25519.SecretKey) Curve25519.generateSecretKey
+  liftIO (coerce @(IO Curve25519.SecretKey) Curve25519.generateSecretKey)
 
 -- | Derive a public key from a secret one.
 --
