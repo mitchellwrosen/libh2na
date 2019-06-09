@@ -136,19 +136,20 @@ initializeChaCha (SecretKey key) nonce =
     CryptoPassed chacha ->
       chacha
 
--- | Sign a message with a secret key.
+-- | Sign a message with a secret key, producing a 32-byte signature.
 --
 -- To verify the authenticity of a message was signed by a particular secret
 -- key, simply re-sign the message and compare the signatures.
 --
 -- /Implementation/: @HKDF@, @HMAC-BLAKE2b-256@
 sign ::
-     SecretKey
+     SecretKey -- ^ Secret key
   -> ByteString -- ^ Message
   -> ByteString -- ^ Signature
 sign (SecretKey key) message =
-  ByteArray.convert
-    (HMAC.hmac (HKDF.extractSkip key) message :: HMAC.HMAC Hash.Blake2b_256)
+  message
+    & HMAC.hmac @_ @_ @Hash.Blake2b_256 (HKDF.extractSkip key)
+    & ByteArray.convert
 
 -- | Sign a message with a secret key.
 --
@@ -156,7 +157,10 @@ sign (SecretKey key) message =
 -- key, simply re-sign the message and compare the signatures.
 --
 -- /Implementation/: @SipHash 2-4@
-shortsign :: SecretKey -> ByteString -> Word64
+shortsign ::
+     SecretKey -- ^ Secret key
+  -> ByteString -- ^ Message
+  -> Word64 -- ^ Signature
 shortsign key message =
   case ByteArray.Hash.sipHash (sipkey key) message of
     ByteArray.Hash.SipHash hash ->

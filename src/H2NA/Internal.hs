@@ -7,10 +7,10 @@ import qualified Crypto.PubKey.Curve25519 as Curve25519
 --
 -- /Implementation/: @Curve25519@.
 newtype PublicKey
-  = PublicKey Curve25519.PublicKey
+  = PublicKey { unPublicKey :: Curve25519.PublicKey }
 
 -- | A 32-byte secret key.
 --
 -- /Implementation/: @Curve25519@
 newtype SecretKey
-  = SecretKey Curve25519.SecretKey
+  = SecretKey { unSecretKey :: Curve25519.SecretKey }

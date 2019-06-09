@@ -9,6 +9,8 @@ common common
 
   default-extensions:
     BlockArguments
+    DerivingStrategies
+    GeneralizedNewtypeDeriving
     LambdaCase
     OverloadedStrings
     ScopedTypeVariables
@@ -57,6 +59,7 @@ test-suite tests
     libh2na,
     tasty,
     tasty-hedgehog ^>= 1.0,
+    text,
 
   hs-source-dirs:
     test

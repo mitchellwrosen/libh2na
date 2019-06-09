@@ -5,13 +5,14 @@ module H2NA.Password
   , verifyPassword
   ) where
 
-import Control.Monad   (guard, (>=>))
-import Crypto.Error    (CryptoFailable(..))
-import Data.ByteArray  (Bytes)
-import Data.ByteString (ByteString)
-import Data.Foldable   (fold)
-import Data.Text       (Text)
-import Data.Word       (Word32)
+import Control.Monad          (guard, (>=>))
+import Control.Monad.IO.Class
+import Crypto.Error           (CryptoFailable(..))
+import Data.ByteArray         (Bytes)
+import Data.ByteString        (ByteString)
+import Data.Foldable          (fold)
+import Data.Text              (Text)
+import Data.Word              (Word32)
 
 import qualified Crypto.KDF.Argon2          as Argon2
 import qualified Crypto.Random              as Random
@@ -27,11 +28,17 @@ import qualified Data.Text.Read             as Text (decimal)
 
 -- | Hash a password.
 --
+-- @
+-- > hashPassword "hunter2"
+-- "$argon2id$v=13$m=131072,t=3,p=4$ZWmBnqJ99BzcUZe1j24Gjw==$rojyj6gweIkcd39QQR8S1oxFJclpciBgYSuxvcGxfRo="
+-- @
+--
 -- /Implementation/: @Argon2id@
 hashPassword ::
-     Text -- ^ Password
-  -> IO Text -- ^ Digest
-hashPassword password = do
+     MonadIO m
+  => Text -- ^ Password
+  -> m Text -- ^ Digest
+hashPassword password = liftIO $ do
   salt :: Bytes <-
     Random.getRandomBytes 16
 
@@ -51,6 +58,11 @@ hashPassword password = do
         }
 
 -- | Verify a password hashed with 'hashPassword'.
+--
+-- @
+-- > verifyPassword "hunter2" "$argon2id$v=13$m=131072,t=3,p=4$ZWmBnqJ99BzcUZe1j24Gjw==$rojyj6gweIkcd39QQR8S1oxFJclpciBgYSuxvcGxfRo="
+-- True
+-- @
 --
 -- /Implementation/: @Argon2id@
 verifyPassword ::
