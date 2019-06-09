@@ -40,20 +40,24 @@ library
     transformers,
 
   exposed-modules:
-    H2NA.Encoding
-    H2NA.Hash
-    H2NA.Password
-    H2NA.PublicKey
-    H2NA.SecretBox
-    H2NA.SecretKey
+    H2NA
 
   hs-source-dirs:
     src
 
   other-modules:
-    H2NA.Internal
     H2NA.Internal.AEAD
+    H2NA.Internal.Decrypt
+    H2NA.Internal.DiffieHellmanSecret
+    H2NA.Internal.Encoding
+    H2NA.Internal.Encrypt
+    H2NA.Internal.Hash
     H2NA.Internal.KDF
+    H2NA.Internal.Password
+    H2NA.Internal.PseudoRandomMaterial
+    H2NA.Internal.PublicKey
+    H2NA.Internal.SecretKey
+    H2NA.Internal.Sign
     H2NA.Internal.Signature
 
 test-suite tests

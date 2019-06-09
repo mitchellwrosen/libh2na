@@ -11,12 +11,12 @@ module H2NA.Internal.AEAD
   , generateNonce
   ) where
 
-import H2NA.Internal.KDF (deriveKey)
-import H2NA.SecretKey    (SecretKey)
+import H2NA.Internal.KDF                  (deriveKey)
+import H2NA.Internal.PseudoRandomMaterial (PseudoRandomMaterial)
 
 import Control.Monad.IO.Class
 import Crypto.Error           (CryptoFailable(..))
-import Data.ByteArray         (ByteArray, Bytes)
+import Data.ByteArray         (ByteArray, ByteArrayAccess, Bytes)
 import Data.ByteString        (ByteString)
 import Data.Coerce            (coerce)
 import Data.Function          ((&))
@@ -108,7 +108,8 @@ generateNonce = liftIO $ do
 
 
 aeadEncrypt ::
-     SecretKey
+     ByteArrayAccess a
+  => PseudoRandomMaterial a
   -> Nonce
   -> ByteString
   -> (ByteString, Poly1305.Auth)
@@ -126,7 +127,8 @@ aeadEncrypt key (Nonce nonce) plaintext =
     (ciphertext, ChaCha.finalize state1)
 
 aeadDecrypt ::
-     SecretKey
+     ByteArrayAccess a
+  => PseudoRandomMaterial a
   -> Nonce
   -> ByteString
   -> (ByteString, Poly1305.Auth)

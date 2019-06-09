@@ -1,13 +1,14 @@
-module H2NA.SecretKey
-  ( SecretKey
+module H2NA.Internal.SecretKey
+  ( SecretKey(..)
   , generateSecretKey
   , derivePublicKey
-    -- ** Conversion
   , secretKeyToBytes
   , bytesToSecretKey
+  , secretKeyToPseudoRandomMaterial
   ) where
 
-import H2NA.Internal     (PublicKey(..), SecretKey(..))
+import H2NA.Internal.PseudoRandomMaterial
+import H2NA.Internal.PublicKey            (PublicKey(..))
 
 import Control.Monad.IO.Class
 import Crypto.Error           (CryptoFailable(..))
@@ -17,6 +18,12 @@ import Data.Coerce            (coerce)
 import qualified Crypto.PubKey.Curve25519 as Curve25519
 import qualified Data.ByteArray           as ByteArray
 
+
+-- | A 32-byte secret key.
+--
+-- /Implementation/: @Curve25519@
+newtype SecretKey
+  = SecretKey { unSecretKey :: Curve25519.SecretKey }
 
 -- | Generate a secret key.
 --
@@ -52,3 +59,9 @@ bytesToSecretKey bytes =
       Just (SecretKey key)
     _ ->
       Nothing
+
+secretKeyToPseudoRandomMaterial ::
+     SecretKey
+  -> PseudoRandomMaterial Curve25519.SecretKey
+secretKeyToPseudoRandomMaterial =
+  coerce

@@ -1,13 +1,10 @@
 -- | Helper functions for common encodings.
 
-module H2NA.Encoding
-  ( -- * Hexadecimal
-    encodeHex
+module H2NA.Internal.Encoding
+  ( encodeHex
   , decodeHex
-    -- * Base64
   , encodeBase64
   , decodeBase64
-    -- ** URL-safe variant
   , encodeUrlSafeBase64
   , decodeUrlSafeBase64
   ) where

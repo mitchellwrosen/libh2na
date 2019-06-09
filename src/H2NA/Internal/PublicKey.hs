@@ -1,11 +1,8 @@
-module H2NA.PublicKey
-  ( PublicKey
-    -- ** Conversion
+module H2NA.Internal.PublicKey
+  ( PublicKey(..)
   , publicKeyToBytes
   , bytesToPublicKey
   ) where
-
-import H2NA.Internal (PublicKey(..))
 
 import Crypto.Error    (CryptoFailable(..))
 import Data.ByteString (ByteString)
@@ -14,6 +11,12 @@ import Data.Coerce     (coerce)
 import qualified Crypto.PubKey.Curve25519 as Curve25519
 import qualified Data.ByteArray           as ByteArray
 
+
+-- | A 32-byte public key, derived from a secret key.
+--
+-- /Implementation/: @Curve25519@.
+newtype PublicKey
+  = PublicKey { unPublicKey :: Curve25519.PublicKey }
 
 -- | View a public key as 32-byte string.
 publicKeyToBytes :: PublicKey -> ByteString

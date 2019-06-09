@@ -1,4 +1,4 @@
-module H2NA.Hash
+module H2NA.Internal.Hash
   ( hash
   , hashFold
   ) where

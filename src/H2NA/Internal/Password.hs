@@ -1,9 +1,11 @@
 {-# OPTIONS_GHC -fno-warn-incomplete-patterns #-}
 
-module H2NA.Password
+module H2NA.Internal.Password
   ( hashPassword
   , verifyPassword
   ) where
+
+import H2NA.Internal.Encoding (decodeBase64)
 
 import Control.Monad          (guard, (>=>))
 import Control.Monad.IO.Class
@@ -172,11 +174,8 @@ parseDigest digest = do
 
     unBase64 :: Text -> Maybe ByteString
     unBase64 =
-      either (const Nothing) Just .
-      ByteArray.Encoding.convertFromBase ByteArray.Encoding.Base64 .
-      Text.encodeUtf8
+      decodeBase64 . Text.encodeUtf8
 
     readWord32 :: Text -> Maybe Word32
     readWord32 =
       either (const Nothing) (Just . fst) . Text.decimal
-
