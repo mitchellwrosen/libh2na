@@ -5,9 +5,13 @@ module H2NA.SecretBox
   , decrypt
   , sign
   , shortsign
+    -- ** Nonce
   , Nonce
   , generateNonce
   , defaultNonce
+    -- ** Signature
+  , Signature
+  , signatureToBytes
   ) where
 
 import H2NA.Internal (SecretKey(..))
@@ -19,6 +23,7 @@ import Crypto.Error              (CryptoFailable(..))
 import Data.Bits                 (unsafeShiftL, (.|.))
 import Data.ByteArray            (Bytes)
 import Data.ByteString           (ByteString)
+import Data.Coerce               (coerce)
 import Data.Function             ((&))
 import Data.Word                 (Word64, Word8)
 import Foreign.Ptr               (plusPtr)
@@ -136,6 +141,25 @@ initializeChaCha (SecretKey key) nonce =
     CryptoPassed chacha ->
       chacha
 
+newtype Signature
+  = Signature ByteString
+
+-- | Constant-time comparison.
+instance Eq Signature where
+  Signature x == Signature y =
+    ByteArray.constEq x y
+
+-- | Base64-encoded signature.
+instance Show Signature where
+  show (Signature sig) =
+    sig
+      & ByteArray.Encoding.convertToBase ByteArray.Encoding.Base64
+      & ByteString.Char8.unpack
+
+signatureToBytes :: Signature -> ByteString
+signatureToBytes =
+  coerce
+
 -- | Sign a message with a secret key, producing a 32-byte signature.
 --
 -- To verify the authenticity of a message was signed by a particular secret
@@ -145,11 +169,13 @@ initializeChaCha (SecretKey key) nonce =
 sign ::
      SecretKey -- ^ Secret key
   -> ByteString -- ^ Message
-  -> ByteString -- ^ Signature
-sign (SecretKey key) message =
-  message
-    & HMAC.hmac @_ @_ @Hash.Blake2b_256 (HKDF.extractSkip key)
-    & ByteArray.convert
+  -> Signature -- ^ Signature
+sign =
+  coerce sign_
+
+sign_ :: SecretKey -> ByteString -> ByteString
+sign_ (SecretKey key) =
+  ByteArray.convert . HMAC.hmac @_ @_ @Hash.Blake2b_256 (HKDF.extractSkip key)
 
 -- | Sign a message with a secret key.
 --
