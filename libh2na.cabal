@@ -37,6 +37,7 @@ library
     transformers,
 
   exposed-modules:
+    H2NA.Encoding
     H2NA.Hash
     H2NA.Password
     H2NA.PublicKey

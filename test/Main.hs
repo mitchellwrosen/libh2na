@@ -4,7 +4,6 @@ import H2NA.Password
 import H2NA.SecretBox
 import H2NA.SecretKey
 
-import Control.Monad.IO.Class
 import Data.ByteString (ByteString)
 import Data.Text (Text)
 import Hedgehog
@@ -40,6 +39,13 @@ secretBoxTests =
       key <- generateSecretKey
       nonce <- generateNonce
       decrypt key (encrypt key nonce plaintext) === Just plaintext
+
+  , testProperty "encrypt/decrypt detached" $ property do
+      plaintext <- forAll genPlaintext
+      key <- generateSecretKey
+      nonce <- generateNonce
+      let (ciphertext, signature) = encryptDetached key nonce plaintext
+      decryptDetached key ciphertext signature === Just plaintext
   ]
 
 genPassword :: Gen Text

@@ -1,8 +1,17 @@
 {-# OPTIONS_GHC -fno-warn-incomplete-patterns #-}
 
+-- | Secret-key cryptography suite.
+
 module H2NA.SecretBox
-  ( encrypt
+  ( -- * Secret box API
+    -- ** Encryption
+    encrypt
+  , encryptIO
+  , encryptDetached
+    -- ** Decryption
   , decrypt
+  , decryptDetached
+    -- ** Signing
   , sign
   , shortsign
     -- ** Nonce
@@ -10,8 +19,7 @@ module H2NA.SecretBox
   , generateNonce
   , defaultNonce
     -- ** Signature
-  , Signature
-  , signatureToBytes
+  , Signature(..)
   ) where
 
 import H2NA.Internal (SecretKey(..))
@@ -65,6 +73,10 @@ generateNonce = liftIO $ do
       pure (Nonce nonce)
 
 -- | The default nonce.
+--
+-- This is only suitable for encrypting a message with a single-use secret key.
+-- If you encrypt more than one message with a secret key, you must use a
+-- different nonce each time.
 defaultNonce :: Nonce
 defaultNonce =
   case ChaCha.nonce12 (ByteString.replicate 12 0) of
@@ -83,23 +95,52 @@ encrypt ::
   -> ByteString -- ^ Plaintext
   -> ByteString -- ^ Ciphertext
 encrypt key (Nonce nonce) plaintext =
-  evalState (encryptS nonce plaintext) (initializeChaCha key nonce)
+  let
+    (ciphertext, signature) =
+      evalState (encryptS nonce plaintext) (initializeChaCha key nonce)
+  in
+    ByteString.concat
+      [ signature
+      , ByteArray.convert nonce
+      , ciphertext
+      ]
+
+-- | A variant of 'encrypt' that generates a random nonce with 'generateNonce'.
+encryptIO ::
+     MonadIO m
+  => SecretKey -- ^ Secret key
+  -> ByteString -- ^ Plaintext
+  -> m ByteString -- ^ Ciphertext
+encryptIO key plaintext = do
+  nonce <- generateNonce
+  pure (encrypt key nonce plaintext)
+
+-- | A variant of 'encrypt' that does not combine the ciphertext with the
+-- message signature.
+--
+-- This is necessary if you want to store the signature separately.
+encryptDetached ::
+     SecretKey -- ^ Secret key
+  -> Nonce -- ^ Nonce
+  -> ByteString -- ^ Plaintext
+  -> (ByteString, Signature) -- ^ Ciphertext and signature
+encryptDetached key (Nonce nonce) plaintext =
+  let
+    (ciphertext, signature) =
+      evalState (encryptS nonce plaintext) (initializeChaCha key nonce)
+  in
+    (ByteArray.convert nonce <> ciphertext, Signature signature)
 
 encryptS ::
      ChaCha.Nonce
   -> ByteString
-  -> State ChaCha.State ByteString
+  -> State ChaCha.State (ByteString, ByteString)
 encryptS nonce plaintext = do
   modify' (ChaCha.appendAAD nonce)
   modify' ChaCha.finalizeAAD
   ciphertext <- state (ChaCha.encrypt plaintext)
   chacha <- get
-  pure
-    (ByteString.concat
-      [ ByteArray.convert (ChaCha.finalize chacha)
-      , ByteArray.convert nonce
-      , ciphertext
-      ])
+  pure (ciphertext, ByteArray.convert (ChaCha.finalize chacha))
 
 -- | Decrypt and verify a message with the secret key that was used to encrypt
 -- and sign it.
@@ -109,13 +150,23 @@ decrypt ::
      SecretKey -- ^ Secret key
   -> ByteString -- ^ Ciphertext
   -> Maybe ByteString -- ^ Plaintext
-decrypt key payload0 = do
-  let
-    (authBytes, payload1) =
+decrypt key payload0 =
+  decryptDetached key payload1 (coerce signature)
+  where
+    (signature, payload1) =
       ByteString.splitAt 16 payload0
 
-  CryptoPassed auth <-
-    Just (Poly1305.authTag authBytes)
+
+-- | Variant of 'decrypt' that is used to decrypt messages encrypted with
+-- 'encryptDetached'.
+decryptDetached ::
+     SecretKey -- ^ Secret key
+  -> ByteString -- ^ Ciphertext
+  -> Signature -- ^ Signature
+  -> Maybe ByteString -- ^ Plaintext
+decryptDetached key payload1 (Signature signatureBytes) = do
+  CryptoPassed signature <-
+    Just (Poly1305.authTag signatureBytes)
 
   let
     (nonceBytes, ciphertext) =
@@ -131,9 +182,13 @@ decrypt key payload0 = do
         & ChaCha.finalizeAAD
         & ChaCha.decrypt ciphertext
 
-  guard (auth == ChaCha.finalize chacha)
+  guard (signature == ChaCha.finalize chacha)
 
   pure plaintext
+
+-- decryptDetached_ ::
+--      SecretKey
+--   ->
 
 initializeChaCha :: SecretKey -> ChaCha.Nonce -> ChaCha.State
 initializeChaCha (SecretKey key) nonce =
@@ -141,8 +196,10 @@ initializeChaCha (SecretKey key) nonce =
     CryptoPassed chacha ->
       chacha
 
+
+-- | A message signature with a constant-time 'Eq' instance.
 newtype Signature
-  = Signature ByteString
+  = Signature { unSignature :: ByteString }
 
 -- | Constant-time comparison.
 instance Eq Signature where
@@ -156,9 +213,6 @@ instance Show Signature where
       & ByteArray.Encoding.convertToBase ByteArray.Encoding.Base64
       & ByteString.Char8.unpack
 
-signatureToBytes :: Signature -> ByteString
-signatureToBytes =
-  coerce
 
 -- | Sign a message with a secret key, producing a 32-byte signature.
 --
