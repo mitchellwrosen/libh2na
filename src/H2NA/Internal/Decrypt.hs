@@ -28,7 +28,7 @@ import qualified Data.ByteString        as ByteString
 import qualified List.Transformer       as ListT
 
 
--- | Decrypt and verify a message.
+-- | Decrypt and verify a message that was encrypted with 'encrypt'.
 --
 -- /Implementation/: @ChaCha20@, @HKDF@, @Poly1305@
 decrypt ::
@@ -38,7 +38,7 @@ decrypt ::
 decrypt key =
   decryptWith (secretKeyToPseudoRandomMaterial key)
 
--- | Decrypt and verify a message intended for a single recipient.
+-- | Decrypt and verify a message that was encrypted with 'encryptFor'.
 --
 -- /Implementation/: @ChaCha20@, @HKDF@, @Poly1305@
 decryptFrom ::
@@ -69,7 +69,7 @@ decryptWith key payload0 =
       ByteString.splitAt 12 payload1
 
 -- | A variant of 'decrypt' that is used to decrypt messages encrypted with
--- 'encryptDetached'.
+-- 'H2NA.Internal.Encrypt.encryptDetached'.
 decryptDetached ::
      SecretKey -- ^ Secret key
   -> ByteString -- ^ Ciphertext
@@ -79,7 +79,7 @@ decryptDetached key =
   decryptDetachedWith (secretKeyToPseudoRandomMaterial key)
 
 -- | A variant of 'decryptFrom' that is used to decrypt messages encrypted with
--- 'encryptDetachedFor'.
+-- 'H2NA.Internal.Encrypt.encryptDetachedFor'.
 decryptDetachedFrom ::
      PublicKey -- ^ Sender public key
   -> SecretKey -- ^ Receiver secret key
@@ -106,7 +106,8 @@ decryptDetachedWith key payload (Signature signature) =
     (nonce, ciphertext) =
       ByteString.splitAt 12 payload
 
--- | A variant of 'decrypt' suitable for decrypting a sequence of messages.
+-- | A variant of 'decrypt' suitable for decrypting a sequence of messages
+-- encrypted with 'H2NA.Internal.Encrypt.encryptSequence'.
 decryptSequence ::
      Monad m
   => SecretKey -- ^ Secret key
@@ -115,7 +116,8 @@ decryptSequence ::
 decryptSequence key =
   decryptSequenceWith (secretKeyToPseudoRandomMaterial key)
 
--- | A variant of 'decryptFrom' suitable for decrypting a sequence of messages.
+-- | A variant of 'decryptFrom' suitable for decrypting a sequence of messages
+-- encrypted with 'H2NA.Internal.Encrypt.encryptSequenceFor'.
 decryptSequenceFrom ::
      Monad m
   => PublicKey -- ^ Sender public key

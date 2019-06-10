@@ -33,6 +33,7 @@ library
   build-depends:
     bytestring,
     cryptonite,
+    deepseq ^>= 1.4,
     foldl,
     list-transformer ^>= 1.0,
     memory,

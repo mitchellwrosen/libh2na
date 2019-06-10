@@ -42,11 +42,14 @@ module H2NA
   , decodeUrlSafeBase64
     -- * Types
     -- ** Secret key
-  , SecretKey(..)
+  , SecretKey
   , generateSecretKey
   , derivePublicKey
+    -- *** Conversion
+  , secretKeyToBytes
+  , bytesToSecretKey
     -- ** Public key
-  , PublicKey(..)
+  , PublicKey
     -- *** Conversion
   , publicKeyToBytes
   , bytesToPublicKey

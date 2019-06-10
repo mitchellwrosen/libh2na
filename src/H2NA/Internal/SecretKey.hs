@@ -10,6 +10,7 @@ module H2NA.Internal.SecretKey
 import H2NA.Internal.PseudoRandomMaterial
 import H2NA.Internal.PublicKey            (PublicKey(..))
 
+import Control.DeepSeq        (NFData)
 import Control.Monad.IO.Class
 import Crypto.Error           (CryptoFailable(..))
 import Data.ByteString        (ByteString)
@@ -24,6 +25,7 @@ import qualified Data.ByteArray           as ByteArray
 -- /Implementation/: @Curve25519@
 newtype SecretKey
   = SecretKey { unSecretKey :: Curve25519.SecretKey }
+  deriving newtype (Eq, NFData)
 
 -- | Generate a secret key.
 --

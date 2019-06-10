@@ -34,7 +34,7 @@ import qualified Data.ByteString.Char8        as ByteString.Char8
 
 -- | A nonce.
 --
--- Given a initial nonce, you can generate an infinite list of related nonces
+-- Given a initial nonce, you can generate an infinite list of derived nonces
 -- with the 'Enum' instance:
 --
 -- @

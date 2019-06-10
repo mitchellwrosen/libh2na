@@ -36,7 +36,16 @@ import qualified List.Transformer as ListT
 -- secret key.
 --
 -- If the key is used more than once, then the nonce should be randomly
--- generated with 'generateNonce'. Otherwise, you may use 'zeroNonce'.
+-- generated with 'generateNonce'. Otherwise, you may use
+-- 'H2NA.Internal.AEAD.zeroNonce'.
+--
+-- The wire format of the ciphertext is as follows:
+--
+-- @
+-- +----------------------+------------------+------------+
+-- | Signature (16 bytes) | Nonce (12 bytes) | Ciphertext |
+-- +----------------------+------------------+------------+
+-- @
 --
 -- /Implementation/: @ChaCha20@, @HKDF@, @Poly1305@
 encrypt ::
@@ -48,11 +57,19 @@ encrypt key =
   encryptWith (secretKeyToPseudoRandomMaterial key)
 
 -- | Encrypt and sign a message intended for a single recipient, which can
--- only be decrypted using his secret key and her public key, or his public key
--- and her secret key.
+-- be decrypted using her secret key and the sender's public key.
 --
 -- If the secret key is used more than once, then the nonce should be randomly
--- generated with 'generateNonce'. Otherwise, you may use 'zeroNonce'.
+-- generated with 'generateNonce'. Otherwise, you may use
+-- 'H2NA.Internal.AEAD.zeroNonce'.
+--
+-- The wire format of the ciphertext is as follows:
+--
+-- @
+-- +----------------------+------------------+------------+
+-- | Signature (16 bytes) | Nonce (12 bytes) | Ciphertext |
+-- +----------------------+------------------+------------+
+-- @
 --
 -- /Implementation/: @ChaCha20@, @HKDF@, @Poly1305@
 encryptFor ::
@@ -107,6 +124,14 @@ encryptForIO secretKey publicKey plaintext = do
 -- message signature.
 --
 -- This is useful if you want to store the signature separately.
+--
+-- The wire format of the ciphertext is as follows:
+--
+-- @
+-- +------------------+------------+
+-- | Nonce (12 bytes) | Ciphertext |
+-- +------------------+------------+
+-- @
 encryptDetached ::
      SecretKey -- ^ Secret key
   -> Nonce -- ^ Nonce
@@ -119,6 +144,14 @@ encryptDetached key =
 -- message signature.
 --
 -- This is useful if you want to store the signature separately.
+--
+-- The wire format of the ciphertext is as follows:
+--
+-- @
+-- +------------------+------------+
+-- | Nonce (12 bytes) | Ciphertext |
+-- +------------------+------------+
+-- @
 encryptDetachedFor ::
      SecretKey -- ^ Sender secret key
   -> PublicKey -- ^ Receiver public key
@@ -142,21 +175,47 @@ encryptDetachedWith key nonce plaintext =
     (nonceToBytes nonce <> ciphertext, authToSignature auth)
 
 -- | A variant of 'encrypt' suitable for encrypting a sequence of messages.
+--
+-- The wire format of the ciphertext sequence is as follows:
+--
+-- @
+-- +--------------------------+
+-- | Initial nonce (12 bytes) |
+-- +------------------------+--------------+
+-- | Signature 1 (16 bytes) | Ciphertext 1 |
+-- +------------------------+--------------+
+-- | Signature 2 (16 bytes) | Ciphertext 2 |
+-- +------------------------+--------------+
+--   ⋮    ⋮    ⋮    ⋮    ⋮    ⋮    ⋮
+-- @
 encryptSequence ::
      Monad m
   => SecretKey -- ^ Secret key
-  -> Nonce -- ^ Nonce
+  -> Nonce -- ^ Initial nonce
   -> ListT m ByteString -- ^ Plaintext sequence
   -> ListT m ByteString -- ^ Ciphertext sequence
 encryptSequence key =
   encryptSequenceWith (secretKeyToPseudoRandomMaterial key)
 
 -- | A variant of 'encryptFor' suitable for encrypting a sequence of messages.
+--
+-- The wire format of the ciphertext sequence is as follows:
+--
+-- @
+-- +--------------------------+
+-- | Initial nonce (12 bytes) |
+-- +------------------------+--------------+
+-- | Signature 1 (16 bytes) | Ciphertext 1 |
+-- +------------------------+--------------+
+-- | Signature 2 (16 bytes) | Ciphertext 2 |
+-- +------------------------+--------------+
+--   ⋮    ⋮    ⋮    ⋮    ⋮    ⋮    ⋮
+-- @
 encryptSequenceFor ::
      Monad m
   => SecretKey -- ^ Sender secret key
   -> PublicKey -- ^ Receiver public key
-  -> Nonce -- ^ Nonce
+  -> Nonce -- ^ Initial nonce
   -> ListT m ByteString -- ^ Plaintext sequence
   -> ListT m ByteString -- ^ Ciphertext sequence
 encryptSequenceFor sk pk =
@@ -189,7 +248,7 @@ encryptSequenceWith key nonce0 plaintext0 =
           in
             pure (Just (coerce (authToSignature auth) <> ciphertext, (succ nonce, xs)))
 
--- | A variant of 'encryptSequence' that generates a random nonce with
+-- | A variant of 'encryptSequence' that generates a random initial nonce with
 -- 'generateNonce'.
 encryptSequenceIO ::
      MonadIO m
@@ -200,8 +259,8 @@ encryptSequenceIO key plaintext = do
   nonce <- liftIO generateNonce
   encryptSequence key nonce plaintext
 
--- | A variant of 'encryptSequenceFor' that generates a random nonce with
--- 'generateNonce'.
+-- | A variant of 'encryptSequenceFor' that generates a random initial nonce
+-- with 'generateNonce'.
 encryptSequenceForIO ::
      MonadIO m
   => SecretKey -- ^ Sender secret key

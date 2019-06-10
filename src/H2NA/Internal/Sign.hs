@@ -24,7 +24,7 @@ import qualified Data.ByteArray.Hash    as ByteArray.Hash
 -- | Sign a message with a secret key, producing a 32-byte signature.
 --
 -- To verify the authenticity of a message was signed by a particular secret
--- key, simply re-sign the message and compare the signatures.
+-- key, simply re-sign the message and compare the signatures for equality.
 --
 -- /Implementation/: @HKDF@, @HMAC-BLAKE2b-256@
 sign ::
@@ -47,7 +47,7 @@ sign_ key message =
 -- | Sign a message with a secret key.
 --
 -- To verify the authenticity of a message was signed by a particular secret
--- key, simply re-sign the message and compare the signatures.
+-- key, simply re-sign the message and compare the signatures for equality.
 --
 -- /Implementation/: @SipHash 2-4@
 shortsign ::
