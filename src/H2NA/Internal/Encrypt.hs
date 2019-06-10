@@ -6,14 +6,17 @@ module H2NA.Internal.Encrypt
   , encryptFor
   , encryptDetachedFor
   , encryptSequenceFor
+
+  , encryptAnonymouslyFor
   ) where
 
 import H2NA.Internal.AEAD                 (Nonce, aeadEncrypt, generateNonce,
                                            nonceToBytes)
 import H2NA.Internal.DiffieHellmanSecret
 import H2NA.Internal.PseudoRandomMaterial (PseudoRandomMaterial)
-import H2NA.Internal.PublicKey            (PublicKey)
-import H2NA.Internal.SecretKey            (SecretKey,
+import H2NA.Internal.PublicKey            (PublicKey, publicKeyToBytes)
+import H2NA.Internal.SecretKey            (SecretKey, derivePublicKey,
+                                           generateSecretKey,
                                            secretKeyToPseudoRandomMaterial)
 import H2NA.Internal.Signature            (Signature(..), authToSignature)
 
@@ -269,3 +272,40 @@ encryptSequenceWithPure key nonce0 plaintext0 =
               aeadEncrypt key nonce x
           in
             pure (Just (coerce (authToSignature auth) <> ciphertext, (succ nonce, xs)))
+
+
+-- | A variant of 'encryptFor' that uses an ephemeral secret key, so the
+-- recipient cannot verify the identity of the sender.
+--
+-- The wire format of the ciphertext is as follows:
+--
+-- @
+-- +------------------+---------------------------------+------------+
+-- | Nonce (12 bytes) | Ephemeral public key (32 bytes) | Ciphertext |
+-- +------------------+---------------------------------+------------+
+-- @
+--
+-- /Implementation/: @ChaCha20@, @HKDF@, @Poly1305@
+encryptAnonymouslyFor ::
+     MonadIO m
+  => PublicKey -- ^ Receiver public key
+  -> ByteString -- ^ Plaintext
+  -> m ByteString -- ^ Ciphertext
+encryptAnonymouslyFor publicKey plaintext = do
+  nonce <- generateNonce
+  secretKey <- generateSecretKey
+
+  let
+    (ciphertext, auth) =
+      aeadEncrypt
+        (diffieHellmanSecretToPseudoRandomMaterial secretKey publicKey)
+        nonce
+        plaintext
+
+  pure
+    (ByteString.concat
+      [ nonceToBytes nonce
+      , publicKeyToBytes (derivePublicKey secretKey)
+      , coerce (authToSignature auth)
+      , ciphertext
+      ])

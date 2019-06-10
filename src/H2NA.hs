@@ -16,6 +16,8 @@ module H2NA
   , encryptFor
   , encryptDetachedFor
   , encryptSequenceFor
+    -- *** Anonymous encryption
+  , encryptAnonymouslyFor
     -- ** Decryption
   , decryptFrom
   , decryptDetachedFrom
