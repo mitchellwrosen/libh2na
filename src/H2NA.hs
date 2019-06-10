@@ -2,10 +2,8 @@ module H2NA
   ( -- * Secret key cryptography
     -- ** Encryption
     encrypt
-  , encryptIO
   , encryptDetached
   , encryptSequence
-  , encryptSequenceIO
     -- ** Decryption
   , decrypt
   , decryptDetached
@@ -16,10 +14,8 @@ module H2NA
     -- * Public key cryptography
     -- ** Encryption
   , encryptFor
-  , encryptForIO
   , encryptDetachedFor
   , encryptSequenceFor
-  , encryptSequenceForIO
     -- ** Decryption
   , decryptFrom
   , decryptDetachedFrom
@@ -53,15 +49,10 @@ module H2NA
     -- *** Conversion
   , publicKeyToBytes
   , bytesToPublicKey
-    -- ** Nonce
-  , Nonce
-  , zeroNonce
-  , generateNonce
     -- ** Signature
   , Signature(..)
   ) where
 
-import H2NA.Internal.AEAD
 import H2NA.Internal.Decrypt
 import H2NA.Internal.Encoding
 import H2NA.Internal.Encrypt

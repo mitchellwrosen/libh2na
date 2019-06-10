@@ -62,11 +62,11 @@ decryptWith key payload0 =
     signature
 
   where
-    (signature, payload1) =
-      ByteString.splitAt 16 payload0
+    (nonce, payload1) =
+      ByteString.splitAt 12 payload0
 
-    (nonce, ciphertext) =
-      ByteString.splitAt 12 payload1
+    (signature, ciphertext) =
+      ByteString.splitAt 16 payload1
 
 -- | A variant of 'decrypt' that is used to decrypt messages encrypted with
 -- 'H2NA.Internal.Encrypt.encryptDetached'.

@@ -5,7 +5,6 @@ import H2NA
 import Control.Monad.Trans.Maybe
 import Data.ByteString           (ByteString)
 import Data.Function
-import Data.Functor.Identity
 import Data.Text                 (Text)
 import Hedgehog
 import Test.Tasty
@@ -32,29 +31,27 @@ tests =
     , testProperty "encrypt/decrypt" $ property do
         plaintext <- forAll genPlaintext
         key <- generateSecretKey
-        nonce <- generateNonce
-        decrypt key (encrypt key nonce plaintext) === Just plaintext
+        ciphertext <- encrypt key plaintext
+        decrypt key ciphertext === Just plaintext
 
     , testProperty "encrypt/decrypt detached" $ property do
         plaintext <- forAll genPlaintext
         key <- generateSecretKey
-        nonce <- generateNonce
-        let (ciphertext, signature) = encryptDetached key nonce plaintext
+        (ciphertext, signature) <- encryptDetached key plaintext
         decryptDetached key ciphertext signature === Just plaintext
 
     , testProperty "encrypt/decrypt sequence" $ property do
         plaintexts <- forAll (Gen.list (Range.linear 0 10) genPlaintext)
         key <- generateSecretKey
-        nonce <- generateNonce
 
-        (plaintexts
-          & ListT.select
-          & encryptSequence key nonce
-          & decryptSequence key
-          & Foldl.purely ListT.fold Foldl.list
-          & runMaybeT
-          & runIdentity)
-          === Just plaintexts
+        plaintexts' <-
+          plaintexts
+            & ListT.select
+            & encryptSequence key
+            & decryptSequence key
+            & Foldl.purely ListT.fold Foldl.list
+            & runMaybeT
+        plaintexts' === Just plaintexts
 
     , testProperty "encryptFor/decryptFrom" $ property do
         plaintext <- forAll genPlaintext
@@ -62,17 +59,16 @@ tests =
         let pk1 = derivePublicKey sk1
         sk2 <- generateSecretKey
         let pk2 = derivePublicKey sk2
-        nonce <- generateNonce
-        decryptFrom pk1 sk2 (encryptFor sk1 pk2 nonce plaintext) === Just plaintext
+        ciphertext <- encryptFor sk1 pk2 plaintext
+        decryptFrom pk1 sk2 ciphertext === Just plaintext
 
     , testProperty "encrypt/decrypt detached" $ property do
         plaintext <- forAll genPlaintext
-        nonce <- generateNonce
         sk1 <- generateSecretKey
         let pk1 = derivePublicKey sk1
         sk2 <- generateSecretKey
         let pk2 = derivePublicKey sk2
-        let (ciphertext, signature) = encryptDetachedFor sk1 pk2 nonce plaintext
+        (ciphertext, signature) <- encryptDetachedFor sk1 pk2 plaintext
         decryptDetachedFrom pk1 sk2 ciphertext signature === Just plaintext
 
     , testProperty "encrypt/decrypt sequence" $ property do
@@ -81,16 +77,15 @@ tests =
         let pk1 = derivePublicKey sk1
         sk2 <- generateSecretKey
         let pk2 = derivePublicKey sk2
-        nonce <- generateNonce
 
-        (plaintexts
-          & ListT.select
-          & encryptSequenceFor sk1 pk2 nonce
-          & decryptSequenceFrom pk1 sk2
-          & Foldl.purely ListT.fold Foldl.list
-          & runMaybeT
-          & runIdentity)
-          === Just plaintexts
+        plaintexts' <-
+          plaintexts
+            & ListT.select
+            & encryptSequenceFor sk1 pk2
+            & decryptSequenceFrom pk1 sk2
+            & Foldl.purely ListT.fold Foldl.list
+            & runMaybeT
+        plaintexts' === Just plaintexts
     ]
 
 genPassword :: Gen Text

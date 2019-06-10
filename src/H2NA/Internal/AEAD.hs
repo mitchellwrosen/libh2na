@@ -7,7 +7,6 @@ module H2NA.Internal.AEAD
   , Nonce
   , nonceToBytes
   , bytesToNonce
-  , zeroNonce
   , generateNonce
   ) where
 
@@ -63,7 +62,8 @@ instance Enum Nonce where
   succ (Nonce nonce) =
     case Number.i2ospOf 12 (Number.os2ip nonce + 1) of
       Nothing ->
-        zeroNonce
+        fromJust (bytesToNonce (ByteString.replicate 12 0))
+
       Just bytes ->
         fromJust (bytesToNonce (bytes :: Bytes))
 
@@ -88,15 +88,6 @@ bytesToNonce bytes =
       Just (Nonce nonce)
     _ ->
       Nothing
-
--- | The "zero" nonce.
---
--- This is only suitable for encrypting a message with a single-use secret key.
--- If you encrypt more than one message with a secret key, you must use a
--- different nonce each time.
-zeroNonce :: Nonce
-zeroNonce =
-  fromJust (bytesToNonce (ByteString.replicate 12 0))
 
 -- | Generate a random nonce.
 generateNonce :: MonadIO m => m Nonce
